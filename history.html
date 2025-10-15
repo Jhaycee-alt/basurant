@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Map — BasuRANT</title>
+  <link rel="stylesheet" href="./BasuRANT.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+</head>
+<body>
+  <header class="site-header">Reports Map</header>
+  <!-- Map sits below the fixed header; height uses CSS variable --header-height (computed on load) -->
+  <div id="history-map" style="height:calc(100vh - var(--header-height,64px)); width:100%;"></div>
+
+  <!-- Charts section: will be populated by BasuRANT.js charting code (Chart.js loaded dynamically) -->
+  <section style="max-width:1200px; margin:18px auto; padding:12px;">
+    <h2 style="margin:8px 0;">Reports Analytics</h2>
+    <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:16px;">
+      <div class="chart-card">
+        <canvas id="reportsBarChart" style="height:220px;"></canvas>
+      </div>
+      <div class="chart-card">
+        <canvas id="reportsLineChart" style="height:220px;"></canvas>
+      </div>
+      <div class="chart-card">
+        <canvas id="reportsPieChart" style="height:220px;"></canvas>
+      </div>
+      <div class="chart-card">
+        <canvas id="reportsDoughnutChart" style="height:220px;"></canvas>
+      </div>
+      <div class="chart-card" style="grid-column: 1 / -1;">
+        <canvas id="reportsStackedBarChart" style="height:260px;"></canvas>
+      </div>
+    </div>
+  </section>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="./BasuRANT.js"></script>
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.4.0/firebase-app.js';
+    import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/12.4.0/firebase-auth.js';
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyA_USj1JdYEiO6w7iEXx7i-fmcZi4eqayM",
+      authDomain: "basurant-ae691.firebaseapp.com",
+      projectId: "basurant-ae691",
+      storageBucket: "basurant-ae691.firebasestorage.app",
+      messagingSenderId: "68560863095",
+      appId: "1:68560863095:web:3d0792e4cd2823c48b2b72",
+      measurementId: "G-M74R54N0J3"
+    };
+
+    try {
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        // Track whether anonymous sign-in is allowed for UI/behavior fallbacks
+        window.__anonAllowed = true;
+        signInAnonymously(auth).then(()=> console.debug('History: anonymous sign-in OK')).catch(err => {
+          console.debug('History: anonymous sign-in failed', err && err.code, err && err.message);
+          // If anonymous sign-in is explicitly disabled by the project admin, show a user-visible banner
+          if (err && (err.code === 'auth/admin-restricted-operation' || err.code === 'auth/operation-not-allowed')) {
+            window.__anonAllowed = false;
+            // Insert a visible banner below the header to inform the user
+            try {
+              const existing = document.getElementById('auth-warning');
+              if (!existing) {
+                const b = document.createElement('div');
+                b.id = 'auth-warning';
+                b.style.background = '#FFF4E5';
+                b.style.color = '#663C00';
+                b.style.borderTop = '4px solid #FFD54F';
+                b.style.padding = '10px 16px';
+                b.style.textAlign = 'center';
+                b.textContent = 'Anonymous sign-in is disabled for this Firebase project. Showing locally-cached reports. Sign in with a permitted account to view live reports.';
+                const header = document.querySelector('header');
+                header.parentNode.insertBefore(b, header.nextSibling);
+              }
+            } catch (e) { console.debug('Could not show auth warning banner', e); }
+          }
+        });
+    } catch(e) { console.debug('History: firebase init failed', e); }
+  </script>
+  <script>
+    // init map centered on Baguio City
+    // Ensure header height is reflected in CSS variable so map height calculation is correct
+    function computeHeaderHeight() {
+      try {
+        const header = document.querySelector('header');
+        if (!header) return;
+        const h = Math.ceil(header.getBoundingClientRect().height);
+        document.documentElement.style.setProperty('--header-height', h + 'px');
+      } catch (e) { console.debug('computeHeaderHeight failed', e); }
+    }
+    // Run initially and on resize
+    computeHeaderHeight();
+    window.addEventListener('resize', () => { computeHeaderHeight(); if (map) try { map.invalidateSize(); } catch(e){} });
+
+    const map = L.map('history-map').setView([16.4023, 120.5960], 13);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);
+    // Invalidate size after initial creation so Leaflet uses the correct container dimensions
+    setTimeout(() => { try { computeHeaderHeight(); map.invalidateSize(); } catch(e) { console.debug('map invalidate failed', e); } }, 120);
+
+    // Render saved reports: prefer Firestore helper if available. If permissions fail or anonymous
+    // auth is disabled, fall back to locally-cached reports via window.renderReportsOnMap.
+    (async function loadAndRenderReports(){
+      // If an explicit flag indicates anonymous is disallowed, skip Firestore attempt
+      if (window.__anonAllowed === false) {
+        console.debug('Skipping Firestore fetch because anonymous auth is disallowed');
+        if (window.renderReportsOnMap) return window.renderReportsOnMap(map);
+        return;
+      }
+
+      if (window.fetchReportsFromFirestore) {
+        try {
+          const list = await window.fetchReportsFromFirestore();
+          if (Array.isArray(list) && list.length > 0) {
+            list.forEach(r => {
+              if (r.lat && r.lng) {
+                const color = r.status === 'cleaned' ? '#9E9E9E' : (r.size === 'small' ? '#86B882' : r.size === 'medium' ? '#FFC107' : '#F44336');
+                const marker = L.circleMarker([r.lat, r.lng], { radius: r.size === 'small' ? 6 : r.size === 'medium' ? 9 : 12, color:'#fff', weight:2, fillColor: color, fillOpacity:0.9 }).addTo(map);
+                marker.bindPopup(`<strong>${r.type}</strong><br>${r.size}<br>${new Date(r.createdAt?.seconds ? r.createdAt.seconds*1000 : r.createdAt).toLocaleString()}<br>${r.description || ''}`);
+              }
+            });
+            return;
+          }
+          // If list is empty, still attempt local fallback so users see recent local reports.
+          if (window.renderReportsOnMap) return window.renderReportsOnMap(map);
+        } catch (err) {
+          console.error('fetchReportsFromFirestore failed', err);
+          // If permission denied or auth error, show banner and render local reports
+          if (err && err.code === 'permission-denied') {
+            try {
+              const existing = document.getElementById('auth-warning');
+              if (!existing) {
+                const b = document.createElement('div');
+                b.id = 'auth-warning';
+                b.style.background = '#FFF4E5';
+                b.style.color = '#663C00';
+                b.style.borderTop = '4px solid #FFD54F';
+                b.style.padding = '10px 16px';
+                b.style.textAlign = 'center';
+                b.textContent = 'Permission denied reading live reports from Firestore. Showing locally-cached reports instead.';
+                const header = document.querySelector('header');
+                header.parentNode.insertBefore(b, header.nextSibling);
+              }
+            } catch (e) { console.debug('Could not show permission banner', e); }
+          }
+          if (window.renderReportsOnMap) return window.renderReportsOnMap(map);
+        }
+      } else if (window.renderReportsOnMap) {
+        return window.renderReportsOnMap(map);
+      }
+    })();
+  </script>
+</body>
+</html>

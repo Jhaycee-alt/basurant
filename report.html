@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Report Illegal Dumping — BasuRANT</title>
+  <link rel="stylesheet" href="./BasuRANT.css">
+</head>
+<body>
+  <header class="site-header">Report Illegal Dumping</header>
+  <main style="max-width:720px; margin:24px auto; padding:16px;">
+    <form id="report-form">
+      <div class="form-group">
+        <label for="waste-type">Waste type</label>
+        <select id="waste-type" required>
+          <option value="General waste">General waste</option>
+          <option value="Recycling">Recycling</option>
+          <option value="Hazardous">Hazardous</option>
+          <option value="Construction debris">Construction debris</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label>Garbage size</label>
+        <div style="display:flex; gap:8px;">
+          <label><input type="radio" name="size" value="small" required> Small</label>
+          <label><input type="radio" name="size" value="medium"> Medium</label>
+          <label><input type="radio" name="size" value="large"> Large</label>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="description">Description (optional)</label>
+        <textarea id="description" rows="4" placeholder="Add details about location, landmarks, etc."></textarea>
+      </div>
+
+      <div class="form-group">
+        <label for="photo">Photo (required)</label>
+        <input id="photo" type="file" accept="image/*" capture="environment" required>
+      </div>
+
+      <div class="form-group">
+        <label for="video">Video (optional)</label>
+        <input id="video" type="file" accept="video/*" capture="environment">
+      </div>
+
+      <button type="submit">Submit Report</button>
+    </form>
+  </main>
+
+  <script src="./BasuRANT.js"></script>
+  <script type="module">
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/12.4.0/firebase-app.js';
+    import { getStorage, ref as storageRef, uploadBytes, getDownloadURL } from 'https://www.gstatic.com/firebasejs/12.4.0/firebase-storage.js';
+  import { getFirestore, initializeFirestore, collection, addDoc, setDoc, doc, serverTimestamp } from 'https://www.gstatic.com/firebasejs/12.4.0/firebase-firestore.js';
+  import { getAuth, signInAnonymously, onAuthStateChanged } from 'https://www.gstatic.com/firebasejs/12.4.0/firebase-auth.js';
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyA_USj1JdYEiO6w7iEXx7i-fmcZi4eqayM",
+      authDomain: "basurant-ae691.firebaseapp.com",
+      projectId: "basurant-ae691",
+      storageBucket: "basurant-ae691.firebasestorage.app",
+      messagingSenderId: "68560863095",
+      appId: "1:68560863095:web:3d0792e4cd2823c48b2b72",
+      measurementId: "G-M74R54N0J3"
+    };
+
+  const app = initializeApp(firebaseConfig);
+  const storage = getStorage(app);
+  // Prefer initializeFirestore with long-polling fallback to avoid WebChannel Listen RPC transport errors
+  const db = initializeFirestore ? initializeFirestore(app, { experimentalForceLongPolling: true, useFetchStreams: false }) : getFirestore(app);
+  // Initialize Firebase Auth
+  const auth = getAuth(app);
+  let _anonAttempted = false;
+  let _anonAllowed = true;
+
+  // Try to sign in anonymously only when needed. If the project disallows anonymous sign-in
+  // (admin-restricted-operation or operation-not-allowed), we fall back to saving the report locally
+  // (without media uploads) and inform the user.
+  async function ensureAnonymous() {
+    try {
+      if (auth.currentUser) return true;
+      if (_anonAttempted && !_anonAllowed) return false;
+      _anonAttempted = true;
+      await signInAnonymously(auth);
+      return true;
+    } catch (err) {
+      console.warn('Anonymous sign-in failed or already signed in', err && err.code, err && err.message);
+      // If this operation is restricted by admin settings, don't retry
+      if (err && (err.code === 'auth/admin-restricted-operation' || err.code === 'auth/operation-not-allowed')) {
+        _anonAllowed = false;
+      }
+      return false;
+    }
+  }
+
+  onAuthStateChanged(auth, user => {
+    if (user) console.debug('Auth state: signed in', user.uid);
+    else console.debug('Auth state: signed out');
+  });
+
+  // Attempt anonymous sign-in early so uploads can proceed without waiting for submit
+  window.addEventListener('load', () => {
+    ensureAnonymous().then(ok => {
+      if (ok) console.debug('Report page: anonymous sign-in ready');
+      else console.debug('Report page: anonymous sign-in not available');
+    });
+  });
+
+    const form = document.getElementById('report-form');
+    form.addEventListener('submit', async function(e){
+      e.preventDefault();
+      const type = document.getElementById('waste-type').value;
+      const size = document.querySelector('input[name="size"]:checked').value;
+      const desc = document.getElementById('description').value || '';
+      const photoFile = document.getElementById('photo').files[0];
+      const videoFile = document.getElementById('video').files[0];
+
+      if (!photoFile) { alert('Please add a photo'); return; }
+
+      const id = 'R-' + Date.now();
+      let photoUrl = null;
+      let videoUrl = null;
+
+      // Ensure we have auth before attempting Storage uploads. If anonymous sign-in is disabled
+      // on this project, fall back to saving the report locally without media uploads.
+      const haveAuth = await ensureAnonymous();
+      if (haveAuth) {
+        try {
+          // Upload photo
+          const photosRef = storageRef(storage, `reports/${id}/photo_${photoFile.name}`);
+          const upPhoto = await uploadBytes(photosRef, photoFile);
+          photoUrl = await getDownloadURL(photosRef);
+          console.log('Uploaded photo', { path: photosRef.fullPath, bytes: upPhoto?.size || '(unknown)', url: photoUrl });
+
+          // Upload video if present
+          if (videoFile) {
+            const vidsRef = storageRef(storage, `reports/${id}/video_${videoFile.name}`);
+            const upVid = await uploadBytes(vidsRef, videoFile);
+            videoUrl = await getDownloadURL(vidsRef);
+            console.log('Uploaded video', { path: vidsRef.fullPath, bytes: upVid?.size || '(unknown)', url: videoUrl });
+          }
+        } catch (uploadErr) {
+          console.error('Media upload failed', uploadErr);
+          alert('Media upload failed: ' + (uploadErr?.message || uploadErr));
+          return; // don't continue to save document if uploads failed
+        }
+      } else {
+        // Anonymous auth not available. Save a local placeholder (no media uploaded). Inform the user.
+        alert('Anonymous sign-in is disabled for this Firebase project. The report will be saved locally without media. To upload media, sign in with a permitted account or enable Anonymous authentication in your Firebase Console.');
+      }
+
+      // attempt geolocation and save document with logging
+      async function saveToFirestore(coords){
+          try {
+                // Use the addWasteReport helper to keep a single codepath for creating reports
+                const reportData = {
+                  id, type, size, description: desc, photoUrl, videoUrl, status: 'pending', createdAt: serverTimestamp(), lat: coords?.lat, lng: coords?.lng
+                };
+                await addWasteReport(reportData, id);
+                console.log('Saved report document', { docId: id, reportId: id });
+                return { id };
+          } catch (err) {
+            console.error('Failed to save report to Firestore', err);
+            throw err;
+          }
+        }
+
+      // Helper: Add a waste report to the wasteReports collection. If `docId` is provided, use setDoc at that id.
+      async function addWasteReport(reportData, docId) {
+        try {
+          if (docId) {
+            const ref = doc(db, 'wasteReports', docId);
+            await setDoc(ref, reportData);
+            console.log('addWasteReport: setDoc', docId);
+            return docId;
+          } else {
+            // fallback to auto-id add
+            const colRef = collection(db, 'wasteReports');
+            const res = await addDoc(colRef, reportData);
+            console.log('addWasteReport: addDoc', res.id);
+            return res.id;
+          }
+        } catch (err) {
+          console.error('addWasteReport error', err);
+          throw err;
+        }
+      }
+
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(async (pos) => {
+          try {
+            await saveToFirestore({lat: pos.coords.latitude, lng: pos.coords.longitude});
+          } catch(e){ console.error(e); alert('Save failed: '+(e?.message||e)); }
+          window.location.href = './history.html';
+        }, async (err) => {
+          console.warn('Geolocation failed or denied', err);
+          try { await saveToFirestore(null); } catch(e){ console.error(e); alert('Save failed: '+(e?.message||e)); }
+          window.location.href = './history.html';
+        }, { timeout: 5000 });
+      } else {
+        try { await saveToFirestore(null); } catch(e){ console.error(e); alert('Save failed: '+(e?.message||e)); }
+        window.location.href = './history.html';
+      }
+    });
+  </script>
+</body>
+</html>
