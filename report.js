@@ -465,10 +465,6 @@ function closeCameraModal() {
       clearTimeout(failsafeTimer);
     } catch (err) {
       console.warn('Failed to load barangays.json — using fallback list', err);
-      const note = document.createElement('div');
-      note.className = 'text-xs text-yellow-600 mt-2';
-      note.textContent = 'Could not load barangay list from server; using a built-in fallback.';
-      select.parentNode.appendChild(note);
     } finally {
       try { clearTimeout(failsafeTimer); } catch (e) {}
       // ensure enabled regardless
