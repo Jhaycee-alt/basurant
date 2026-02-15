@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Report Illegal Dumping — BasuRANT</title>
+  <link rel="stylesheet" href="./report.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Choices.js for searchable select -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/choices.js/public/assets/styles/choices.min.css" />
+  <script src="https://cdn.jsdelivr.net/npm/choices.js/public/assets/scripts/choices.min.js"></script>
+  <!-- Mobile CSS moved to BasuRANT.css to avoid inline conflicts -->
+</head>
+<body class="no-sidebar">
+  <!-- Loading overlay -->
+  <div id="loading-overlay" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 items-center justify-center">
+    <div class="bg-white rounded-lg p-6 flex items-center gap-4 shadow-lg">
+      <svg class="animate-spin -ml-1 mr-3 h-6 w-6 text-green-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+      </svg>
+      <div>
+        <div id="loading-message" class="text-sm font-medium text-gray-800">Loading...</div>
+        <div class="text-xs text-gray-500">Please wait</div>
+      </div>
+    </div>
+  </div>
+  <!-- Floating header: fixed at top, full-bleed on small screens, centered on larger screens -->
+  <header id="floating-header" class="fixed inset-x-0 top-4 z-40">
+    <div class="page-wrapper max-w-full sm:max-w-3xl mx-auto px-2 sm:px-4">
+      <div class="bg-white/90 backdrop-blur-sm border border-gray-100 sm:rounded-xl rounded-none shadow-sm py-2 px-2 sm:px-4 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <img src="./Just Logo.png" alt="BasuRANT logo" class="w-8 h-8 rounded-full bg-green-200" />
+          <div>
+            <div class="text-sm font-semibold text-gray-800">BasuRANT</div>
+            <div class="text-xs text-gray-500">Report Indiscriminate Dumping</div>
+          </div>
+        </div>
+        <div class="text-sm text-gray-600">Submit a report — help keep Baguio clean
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <div class="container pt-28 sm:pt-20">
+    <div class="mx-auto w-full max-w-full sm:max-w-3xl px-2 sm:px-4">
+      <div class="expander">
+      <main class="card card-body p-3 sm:p-6">
+        <form id="report-form" class="space-y-3">
+
+        <div class="form-group">
+          <label for="waste-type" class="block text-sm font-medium text-gray-700">Waste type <span class="text-red-500">*</span></label>
+          <select id="waste-type" name="waste-type" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+            <option value="general">General waste</option>
+            <option value="household">Household Waste</option>
+            <option value="construction">Construction Debris</option>
+            <option value="electronics">Electronics (e-waste)</option>
+            <option value="tires">Tires</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+
+        <div class="form-group mt-4">
+          <div class="block text-sm font-medium text-gray-700">Garbage size <span class="text-red-500">*</span></div>
+          <div class="mt-2 flex flex-wrap gap-3">
+            <label class="inline-flex items-center"><input type="radio" name="size" value="small" class="form-radio" checked aria-required="true"> <span class="ml-2">Small</span></label>
+            <label class="inline-flex items-center"><input type="radio" name="size" value="medium" class="form-radio" aria-required="true"> <span class="ml-2">Medium</span></label>
+            <label class="inline-flex items-center"><input type="radio" name="size" value="large" class="form-radio" aria-required="true"> <span class="ml-2">Large</span></label>
+          </div>
+        </div>
+
+        <div class="form-group mt-4">
+          <label class="block text-sm font-medium text-gray-700">Description <span class="text-red-500">*</span></label>
+          <div class="mt-2 grid grid-cols-1 gap-3">
+            <div>
+              <label for="description-material" class="block text-xs font-medium text-gray-600">Materials</label>
+              <select id="description-material" name="description-material" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                <option value="" disabled selected>Select materials</option>
+                <option value="Tires">Tires</option>
+                <option value="Bags of household trash">Bags of household trash</option>
+                <option value="Construction debris">Construction debris</option>
+                <option value="Electronics (e-waste)">Electronics (e-waste)</option>
+                <option value="Mixed waste">Mixed waste</option>
+                <option value="Yard waste">Yard waste</option>
+                <option value="Glass/metal scraps">Glass/metal scraps</option>
+                <option value="Plastic bottles">Plastic bottles</option>
+                <option value="Unknown">Unknown</option>
+              </select>
+            </div>
+            <div>
+              <label for="description-spot" class="block text-xs font-medium text-gray-600">Specific Spot</label>
+              <select id="description-spot" name="description-spot" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                <option value="" disabled selected>Select specific spot</option>
+                <option value="In the drainage ditch">In the drainage ditch</option>
+                <option value="On the alleyway">On the alleyway</option>
+                <option value="Roadside shoulder">Roadside shoulder</option>
+                <option value="Vacant lot">Vacant lot</option>
+                <option value="Creek/riverbank">Creek/riverbank</option>
+                <option value="Near intersection">Near intersection</option>
+                <option value="Near footbridge">Near footbridge</option>
+                <option value="Beside wall/fence">Beside wall/fence</option>
+                <option value="Near school">Near school</option>
+                <option value="Near market">Near market</option>
+              </select>
+            </div>
+            <div>
+              <label for="description-land" class="block text-xs font-medium text-gray-600">Land</label>
+              <select id="description-land" name="description-land" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+                <option value="" disabled selected>Select land type</option>
+                <option value="Public">Public</option>
+                <option value="Private">Private</option>
+                <option value="Unknown">Unknown</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group mt-4">
+          <label for="landmark" class="block text-sm font-medium text-gray-700">Landmark</label>
+          <input id="landmark" name="landmark" type="text" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm" placeholder="Nearby landmark (optional)">
+        </div>
+
+        <div>
+          <label for="barangay" class="block text-sm font-medium text-gray-700">Barangay <span class="text-red-500">*</span></label>
+          <select id="barangay" name="barangay" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
+            <option value="" disabled selected>-- Select barangay --</option>
+          </select>
+        </div>
+
+      <div class="form-group">
+        <label for="photo">Photo <span class="text-red-500">*</span></label>
+        <input id="photo" type="file" accept="image/*" capture="environment" required>
+        <canvas id="camera-canvas"></canvas>
+        <video id="camera-video" autoplay playsinline></video>
+
+        <div class="mt-3">
+          <label for="add-image" class="block text-sm font-medium text-gray-700">Additional image (optional)</label>
+          <input id="add-image" type="file" accept="image/*" class="mt-1 block w-full" />
+          <img id="add-image-preview" src="" alt="Additional image preview" />
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="video">Video (optional)</label>
+        <input id="video" type="file" accept="video/*" capture="environment">
+      </div>
+
+      <div class="mt-4 flex justify-center">
+        <button type="submit" class="btn-green mx-auto block">Submit Report</button>
+      </div>
+    </form>
+    </main>
+    </div>
+  </div>
+
+  <script type="module" src="./BasuRANT.js"></script>
+  <script type="module" src="./report.js"></script>
+  <!-- Camera modal -->
+  <div id="camera-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 items-center justify-center">
+    <div class="bg-white rounded-lg p-4 max-w-md w-full mx-4">
+      <div class="flex justify-between items-center mb-2">
+        <h3 class="text-lg font-medium">Camera</h3>
+        <button aria-label="Close camera" id="close-camera-modal" class="text-gray-600">✕</button>
+      </div>
+      <div class="camera-area">
+        <video id="modal-camera-video" autoplay playsinline></video>
+        <canvas id="modal-camera-canvas"></canvas>
+      </div>
+      <div class="mt-3 flex gap-2 justify-end">
+        <button id="modal-capture-btn" class="btn-green">Capture</button>
+        <button id="modal-cancel-btn" class="btn-green">Cancel</button>
+      </div>
+    </div>
+  </div>
+  <!-- Footer -->
+  <footer class="site-footer mt-6 py-4 bg-white/90 border-t border-gray-100 text-center text-sm text-gray-600">
+    <div class="max-w-full sm:max-w-3xl mx-auto px-4">
+      <div>
+        <img src="./Logo for Website.png" alt="BasuRANT logo" class="mx-auto h-10 w-auto" />
+      </div>
+      <div>© Casas, Dilan, and Peckley</div>
+      <div><a href="https://www.gso.gov.ph" class="text-blue-600 underline">www.gso.gov.ph</a> &nbsp;|&nbsp; 424 - 5148 &nbsp;|&nbsp; 09123456789 &nbsp;|&nbsp; 09987654321</div>
+      
+    </div>
+  </footer>
+</body>
+</html>

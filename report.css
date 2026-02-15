@@ -1,0 +1,127 @@
+#camera-canvas,
+#camera-video {
+  display: none;
+  width: 100%;
+  max-width: 100%;
+  margin-top: 8px;
+  border-radius: 6px;
+}
+
+#add-image-preview {
+  display: none;
+  max-width: 100%;
+  margin-top: 8px;
+  border-radius: 6px;
+}
+
+#modal-camera-video {
+  width: 100%;
+  border-radius: 6px;
+  background: #000;
+}
+
+#modal-camera-canvas {
+  display: none;
+  width: 100%;
+  max-width: 360px;
+  margin-top: 8px;
+  border-radius: 6px;
+}
+
+.card {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+}
+
+.card-body {
+  padding: 1.25rem;
+}
+
+.card-body .form-group,
+.card-body > div,
+.card-body > fieldset,
+.card-body > section {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 0.9rem;
+  background: #fff;
+}
+
+.card-body > div:last-child,
+.card-body .form-group:last-child {
+  margin-bottom: 0;
+}
+
+select {
+  border: 1.5px solid #94a3b8;
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.2);
+}
+
+select:focus {
+  border-color: #16a34a;
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.18);
+  outline: none;
+}
+
+.btn-green,
+.admin-btn {
+  background: #16a34a;
+  color: #fff;
+  border: none;
+}
+
+.btn-green:hover,
+.admin-btn:hover {
+  background: #15803d;
+}
+
+button,
+input[type="button"],
+input[type="submit"],
+input[type="reset"],
+.btn-green,
+.admin-btn {
+  background: #16a34a;
+  color: #fff;
+  border: 1px solid rgba(22, 163, 74, 0.35);
+  border-radius: 10px;
+  padding: 0.6rem 1rem;
+  font-weight: 600;
+  box-shadow: 0 6px 16px rgba(22, 163, 74, 0.2);
+  transition: transform 140ms ease, box-shadow 140ms ease, background 140ms ease;
+}
+
+button:hover,
+input[type="button"]:hover,
+input[type="submit"]:hover,
+input[type="reset"]:hover,
+.btn-green:hover,
+.admin-btn:hover {
+  background: #15803d;
+  box-shadow: 0 8px 18px rgba(22, 163, 74, 0.28);
+  transform: translateY(-1px);
+}
+
+button:active,
+input[type="button"]:active,
+input[type="submit"]:active,
+input[type="reset"]:active,
+.btn-green:active,
+.admin-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 4px 10px rgba(22, 163, 74, 0.22);
+}
+
+button:disabled,
+input[type="button"]:disabled,
+input[type="submit"]:disabled,
+input[type="reset"]:disabled,
+.btn-green:disabled,
+.admin-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+

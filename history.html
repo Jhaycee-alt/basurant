@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Map — BasuRANT</title>
+  <link rel="stylesheet" href="./BasuRANT.css">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* Move the floating header slightly upward on small screens for better spacing */
+    @media (max-width: 640px) {
+      #floating-header.reports-header {
+        transform: translateY(-15px);
+        /* ensure header is above the map and cluster/banner overlays on mobile */
+        z-index: 1000002 !important;
+        pointer-events: auto;
+      }
+    }
+
+    /* Ensure header and legend appear above Leaflet layers */
+    #floating-header.reports-header {
+      z-index: 1000002;
+      pointer-events: auto;
+    }
+
+    #history-map {
+      position: relative;
+      z-index: 1;
+    }
+
+    #history-map-legend {
+      z-index: 1000001;
+      pointer-events: auto;
+    }
+
+    .map-legend {
+      background: rgba(255, 255, 255, 0.92);
+      border: 1px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 0.6rem 0.75rem;
+      box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+      display: grid;
+      gap: 0.35rem;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.85rem;
+      color: #334155;
+    }
+
+    .legend-color {
+      width: 12px;
+      height: 12px;
+      border-radius: 999px;
+      border: 2px solid #fff;
+      box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.12);
+      flex-shrink: 0;
+    }
+  </style>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- Leaflet.markercluster (cluster plugin) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <script src="./history-script.js"></script>
+</head>
+<body>
+   <!-- Loading overlay -->
+  <div id="loading-overlay" class="hidden fixed inset-0 bg-black bg-opacity-50 z-50 items-center justify-center">
+    <div class="bg-white rounded-lg p-6 flex items-center gap-4 shadow-lg">
+      <svg class="animate-spin -ml-1 mr-3 h-6 w-6 text-green-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+      </svg>
+      <div>
+        <div id="loading-message" class="text-sm font-medium text-gray-800">Loading...</div>
+        </div>
+      </div>
+    </div>
+    <!-- Floating header: fixed at top, full-bleed on small screens, centered on larger screens -->
+  <header id="floating-header" class="fixed inset-x-0 top-4 z-40 reports-header">
+    <div class="page-wrapper max-w-full sm:max-w-3xl mx-auto px-2 sm:px-4">
+      <div class="bg-white/90 backdrop-blur-sm border sm:rounded-xl rounded-none shadow-sm py-2 px-2 sm:px-4 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <img src="./Just Logo.png" alt="BasuRANT logo" class="w-8 h-8 rounded-full bg-green-200" />
+            <div class="brand-title-wrapper">
+              <div class="brand-title">BasuRANT</div>
+              <div class="reports-subtitle">Reports Map</div>
+            </div>
+        </div>
+        <div class="flex items-center gap-3">
+          <a href="./report.html" class="inline-flex items-center px-3 py-1.5 bg-green-600 text-white rounded-md text-sm font-medium shadow-sm hover:bg-green-500">New report</a>
+        </div>
+      </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main>
+  <!-- Map container required by Leaflet -->
+  <div id="history-map" style="position:relative;">
+    <!-- Map legend: shows status color mapping (Cleaned / Ongoing / Pending) -->
+    <div id="history-map-legend" class="map-legend" style="position:absolute; bottom:18px; left:50%; transform:translateX(-50%); z-index:1100; max-width:320px;">
+      <div class="legend-item"><div class="legend-color" style="background:#f59e0b;"></div><span>Ongoing</span></div>
+      <div class="legend-item"><div class="legend-color" style="background:#9E9E9E;"></div><span>Pending</span></div>
+    </div>
+  </div>
+  </main>
+
+  <!-- Report details modal (static, moved here for history page) -->
+  <div id="report-view-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4" style="z-index:999999">
+    <div id="report-view-content" class="bg-white rounded-xl shadow-lg p-4 max-w-md sm:max-w-lg w-full mx-4 max-h-[80vh] overflow-auto relative">
+      <div class="flex items-start justify-between">
+        <div class="text-lg font-semibold text-gray-900">Report details</div>
+        <div class="flex items-center gap-2">
+          <button id="close-report-view" class="inline-flex items-center justify-center w-8 h-8 rounded-full bg-white border border-gray-200 text-gray-600 hover:bg-gray-50" aria-label="Close">
+            <span class="sr-only">Close</span>
+            <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="mt-3 text-sm text-gray-700">
+        <!-- Stack view: when multiple reports passed, render small stacked cards here -->
+        <div id="rv-stack-list" class="space-y-3 hidden overflow-auto max-h-72"></div>
+
+        <!-- Single report view (hidden when stack is visible) -->
+        <div id="rv-single-view" class="space-y-2">
+          <div id="rv-id" class="text-xs text-gray-500"></div>
+          <div class="flex items-center gap-3">
+            <div id="rv-type" class="text-base font-medium text-gray-900"></div>
+            <div id="rv-size" class="text-sm text-gray-500"></div>
+          </div>
+          <div id="rv-status" class="mt-1 text-sm font-semibold text-gray-800"></div>
+          <div id="rv-created" class="text-xs text-gray-500"></div>
+          <div id="rv-barangay" class="text-sm text-gray-700"></div>
+          <div id="rv-loc" class="text-sm text-gray-700"></div>
+          <div id="rv-desc" class="mt-3 text-gray-800"></div>
+          <div id="rv-photo-wrap" class="mt-3"><img id="rv-photo" src="" class="w-full rounded-md object-cover hidden" alt="report photo"></div>
+          <div id="rv-photo-data-wrap" class="mt-3 hidden"><img id="rv-photo-data" src="" class="w-full rounded-md object-cover" alt="report photo"></div>
+          <div class="mt-3"><a id="rv-video" href="#" target="_blank" class="text-indigo-600 hover:underline hidden">View video</a></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cluster details banner (static HTML for design + centered over map) -->
+  <div id="cluster-details-banner" class="hidden fixed inset-0 flex items-center justify-center pointer-events-none" style="z-index:999999">
+    <div id="cluster-details-panel" class="pointer-events-auto w-full max-w-2xl mx-4 bg-white/95 backdrop-blur-sm border border-gray-100 rounded-2xl shadow-2xl p-4 text-sm text-gray-900 transform transition-all duration-200 ease-out">
+      <div class="relative">
+        <button id="cluster-details-close" aria-label="Close" class="absolute -right-2 -top-2 inline-flex items-center justify-center w-8 h-8 rounded-full bg-white border border-gray-200 text-gray-600 shadow-sm hover:bg-gray-50">
+          <span class="sr-only">Close</span>
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clip-rule="evenodd"/></svg>
+        </button>
+        <div class="flex items-center gap-3">
+          <div id="cluster-details-count" class="text-lg font-semibold text-gray-900">0 reports</div>
+          <div class="text-xs text-gray-500">Click a report to view details</div>
+        </div>
+        <div id="cluster-details-list" class="mt-3 grid gap-2 max-h-80 overflow-auto">
+          <!-- List items injected by history-script.js -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="site-footer mt-6 py-4 bg-white/90 border-t border-gray-100 text-center text-sm text-gray-600">
+    <div class="max-w-full sm:max-w-3xl mx-auto px-4">
+      <div>
+        <img src="./Logo for Website.png" alt="BasuRANT logo" class="mx-auto h-20 w-30" />
+      </div>
+      <div>© Casas, Dilan, and Peckley</div>
+      <div><a href="https://www.new.baguio.gov.ph" target="_blank" class="text-blue-600 underline">GSO Website</a> &nbsp;|&nbsp; 620-1964 &nbsp;|&nbsp; 09703473419 &nbsp;|&nbsp; 09657221185</div>
+    </div>
+  </footer>
+</body>
+</html>
