@@ -79,37 +79,65 @@ function saveLocalReports(list) {
   localStorage.setItem(LOCAL_REPORTS_KEY, JSON.stringify(list));
 }
 
-// Request and cache user location early so submit can reuse it without prompting again
-(function prefetchUserLocation() {
-  try {
-    if (!navigator.geolocation) return;
-    // Do not re-request if we've already got a cached position
-    if (window.__report_location) return;
-    navigator.geolocation.getCurrentPosition(pos => {
-      try {
+// Location is requested explicitly by user action to enable mobile permission prompts before form submit.
+(function setupLocationRequest() {
+  const requestBtn = document.getElementById('request-location-btn');
+  const statusEl = document.getElementById('location-status');
+
+  function updateStatus(msg, isError = false) {
+    if (!statusEl) return;
+    statusEl.textContent = msg;
+    statusEl.style.color = isError ? '#dc2626' : '#16a34a';
+  }
+
+  async function requestLocation() {
+    if (!navigator.geolocation) {
+      updateStatus('Location is not available on this device.', true);
+      return;
+    }
+
+    try {
+      if (navigator.permissions && typeof navigator.permissions.query === 'function') {
+        const permission = await navigator.permissions.query({ name: 'geolocation' });
+        if (permission && permission.state === 'denied') {
+          updateStatus('Location blocked. Enable in browser settings.', true);
+          return;
+        }
+      }
+    } catch (e) { console.debug('Permission query failed', e); }
+
+    updateStatus('Requesting location...');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
         window.__report_location = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-        // store as hidden fields for progressive enhancement / server reads
-        try {
-          let latEl = document.getElementById('report-lat');
-          let lngEl = document.getElementById('report-lng');
-          if (!latEl) {
-            latEl = document.createElement('input');
-            latEl.type = 'hidden';
-            latEl.id = 'report-lat';
-            document.getElementById('report-form').appendChild(latEl);
-          }
-          if (!lngEl) {
-            lngEl = document.createElement('input');
-            lngEl.type = 'hidden';
-            lngEl.id = 'report-lng';
-            document.getElementById('report-form').appendChild(lngEl);
-          }
-          latEl.value = window.__report_location.lat;
-          lngEl.value = window.__report_location.lng;
-        } catch (e) {}
-      } catch (e) { console.debug('prefetchUserLocation store failed', e); }
-    }, err => { console.debug('prefetch location failed', err); }, { timeout: 7000 });
-  } catch (e) { console.debug('prefetchUserLocation failed', e); }
+        updateStatus('✓ Location allowed');
+        console.log('Location cached:', window.__report_location);
+      },
+      (err) => {
+        console.warn('Location request error', err);
+        if (err && err.code === 1) {
+          updateStatus('Permission denied. Allow location and try again.', true);
+        } else if (err && err.code === 2) {
+          updateStatus('Location unavailable. Check GPS/network.', true);
+        } else {
+          updateStatus('Location request failed.', true);
+        }
+        window.__report_location = null;
+      },
+      { timeout: 10000, enableHighAccuracy: true, maximumAge: 60000 }
+    );
+  }
+
+  if (requestBtn) {
+    requestBtn.addEventListener('click', requestLocation);
+  }
+
+  // Check on load if location already cached from previous request
+  setTimeout(() => {
+    if (window.__report_location) {
+      updateStatus('✓ Location allowed');
+    }
+  }, 500);
 })();
 
 // ---- Reporter name sanitization utilities ----
@@ -143,6 +171,15 @@ let stream = null;
 
 async function startCamera() {
   try {
+    if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+      hideLoading();
+      if (photoInput) {
+        photoInput.click();
+      }
+      alert('Camera API is not available on this browser/device. Please choose a photo from your device.');
+      return;
+    }
+
     showLoading('Starting camera...');
     stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
     if (video) { video.srcObject = stream; video.style.display = ''; }
@@ -189,6 +226,18 @@ async function captureFrameToInput() {
 }
 
 if (openCamBtn) openCamBtn.addEventListener('click', async () => {
+  const canUseMediaDevices = !!(navigator.mediaDevices && typeof navigator.mediaDevices.getUserMedia === 'function');
+  if (!canUseMediaDevices || (typeof window.isSecureContext !== 'undefined' && !window.isSecureContext)) {
+    try {
+      if (photoInput) {
+        photoInput.setAttribute('accept', 'image/*');
+        photoInput.setAttribute('capture', 'environment');
+        photoInput.click();
+      }
+    } catch (e) { console.warn('Camera file picker fallback failed', e); }
+    return;
+  }
+
   const modal = document.getElementById('camera-modal');
   if (modal) {
     modal.classList.remove('hidden');
@@ -196,6 +245,9 @@ if (openCamBtn) openCamBtn.addEventListener('click', async () => {
       await startCamera();
       const modalVid = document.getElementById('modal-camera-video');
       if (modalVid && stream) modalVid.srcObject = stream;
+      if (!stream) {
+        modal.classList.add('hidden');
+      }
     } catch (err) { console.warn('Camera start error', err); }
   } else {
     if (!stream) await startCamera(); else await captureFrameToInput();
@@ -493,6 +545,23 @@ function isWithinBaguio(coords) {
 }
 
 async function getNextReportId() {
+  const endpoints = [
+    '/api/reports/next-id',
+    'http://localhost:3000/api/reports/next-id',
+    'http://localhost:3001/api/reports/next-id'
+  ];
+
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetch(endpoint, { method: 'GET' });
+      if (!response.ok) continue;
+      const payload = await response.json();
+      if (payload && typeof payload.id === 'string' && /^R-\d{5}\d{8}$/.test(payload.id)) {
+        return payload.id;
+      }
+    } catch (e) {}
+  }
+
   const now = new Date();
   const datePart = String(now.getMonth() + 1).padStart(2, '0') + String(now.getDate()).padStart(2, '0') + String(now.getFullYear());
   let reportNumber = 1;
@@ -551,6 +620,40 @@ form.addEventListener('submit', async function (e) {
   try { photoDataUrl = await fileToDataURL(photoFile); } catch (e) { photoDataUrl = null; }
   try { additionalImageDataUrl = await fileToDataURL(addImageFile); } catch (e) { additionalImageDataUrl = null; }
 
+  async function persistReportToServer(reportData) {
+    if (!reportData || !reportData.id) {
+      throw new Error('Invalid report payload');
+    }
+
+    const endpoints = [
+      '/api/reports',
+      'http://localhost:3000/api/reports',
+      'http://localhost:3001/api/reports'
+    ];
+
+    let lastError = null;
+    for (const endpoint of endpoints) {
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(reportData)
+        });
+
+        if (response.ok) {
+          console.log('Saved report to reports.json via', endpoint);
+          return;
+        }
+
+        lastError = new Error('Save failed with status ' + response.status + ' at ' + endpoint);
+      } catch (e) {
+        lastError = e;
+      }
+    }
+
+    throw (lastError || new Error('Unable to save report to server')); 
+  }
+
   // attempt geolocation and save document with logging
   async function saveReportLocally(coords) {
     try {
@@ -576,7 +679,7 @@ form.addEventListener('submit', async function (e) {
       list.push(reportData);
       saveLocalReports(list);
       console.log('Saved report locally', { reportId: id });
-      return { id };
+      return reportData;
     } catch (err) {
       console.error('Failed to save report locally', err);
       throw err;
@@ -584,14 +687,8 @@ form.addEventListener('submit', async function (e) {
   }
 
   // Prefer pre-fetched user location when available to avoid prompting twice
-  const cachedLoc = window.__report_location || (function () {
-    try {
-      const la = document.getElementById('report-lat');
-      const ln = document.getElementById('report-lng');
-      if (la && ln && la.value && ln.value) return { lat: parseFloat(la.value), lng: parseFloat(ln.value) };
-    } catch (e) {}
-    return null;
-  })();
+  const cachedLoc = window.__report_location;
+
   const redirectToHistory = (docId, lat, lng) => {
     const base = './history.html?plot=' + encodeURIComponent(docId || id);
     const coords = (typeof lat === 'number' && typeof lng === 'number') ? ('&lat=' + encodeURIComponent(lat) + '&lng=' + encodeURIComponent(lng)) : '';
@@ -606,8 +703,14 @@ form.addEventListener('submit', async function (e) {
         alert('Reports are limited to Baguio City. Your current location appears to be outside Baguio. Please move to a location inside Baguio City or enable a device location within Baguio and try again.');
         return;
       }
-      await saveReportLocally(cachedLoc);
-    } catch (e) { console.error(e); alert('Save failed: ' + (e?.message || e)); }
+      const savedReport = await saveReportLocally(cachedLoc);
+      await persistReportToServer(savedReport);
+    } catch (e) {
+      console.error(e);
+      hideLoading();
+      alert('Save failed: ' + (e?.message || e));
+      return;
+    }
     showLoading('Report submitted');
     setTimeout(() => {
       hideLoading();
@@ -615,6 +718,17 @@ form.addEventListener('submit', async function (e) {
     }, 800);
     redirectToHistory(id, cachedLoc.lat, cachedLoc.lng);
   } else if (navigator.geolocation) {
+    try {
+      if (navigator.permissions && typeof navigator.permissions.query === 'function') {
+        const permission = await navigator.permissions.query({ name: 'geolocation' });
+        if (permission && permission.state === 'denied') {
+          hideLoading();
+          alert('Location permission is currently blocked for this site. Enable location in browser settings and try again.');
+          return;
+        }
+      }
+    } catch (e) { console.debug('Geolocation permission query failed', e); }
+
     navigator.geolocation.getCurrentPosition(async (pos) => {
       const loc = { lat: pos.coords.latitude, lng: pos.coords.longitude };
       try {
@@ -624,8 +738,14 @@ form.addEventListener('submit', async function (e) {
           alert('Reports are limited to Baguio City. Your detected location is outside Baguio. Report submission has been blocked.');
           return;
         }
-        await saveReportLocally(loc);
-      } catch (e) { console.error(e); alert('Save failed: ' + (e?.message || e)); }
+        const savedReport = await saveReportLocally(loc);
+        await persistReportToServer(savedReport);
+      } catch (e) {
+        console.error(e);
+        hideLoading();
+        alert('Save failed: ' + (e?.message || e));
+        return;
+      }
       showLoading('Report submitted');
       setTimeout(() => {
         hideLoading();
@@ -636,9 +756,15 @@ form.addEventListener('submit', async function (e) {
       console.warn('Geolocation failed or denied', err);
       // If geolocation is denied or fails we cannot verify city membership — block the report to ensure all saved reports are within Baguio.
       hideLoading();
-      alert('Location is required to verify that reports are inside Baguio City. Please enable location permissions and try again.');
+      if (err && err.code === 1) {
+        alert('Location permission was denied. Please allow location access in your browser settings and try again.');
+      } else if (typeof window.isSecureContext !== 'undefined' && !window.isSecureContext) {
+        alert('This page is running on an insecure connection. Some mobile browsers block location prompts unless the page is HTTPS (or localhost).');
+      } else {
+        alert('Location is required to verify that reports are inside Baguio City. Please enable location permissions and try again.');
+      }
       return;
-    }, { timeout: 5000 });
+    }, { timeout: 10000, enableHighAccuracy: true, maximumAge: 0 });
   } else {
     // No geolocation available: block to ensure we only accept reports within Baguio.
     hideLoading();
