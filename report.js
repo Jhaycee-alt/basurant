@@ -1,6 +1,32 @@
-const LOCAL_REPORTS_KEY = 'basurant_reports';
-const LOCAL_REPORT_COUNTER_KEY = 'basurant_report_counter';
+// Import the functions you need from the SDKs you need
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-analytics.js";
+import { getDatabase, ref, set, push } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
 
+// Your web app's Firebase configuration
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyCSEqyxRcUDCN0JhUaoHj6wgvu2qjg1gBk",
+  authDomain: "basuhero-6687c.firebaseapp.com",
+  projectId: "basuhero-6687c",
+  databaseURL: "https://basuhero-6687c-default-rtdb.asia-southeast1.firebasedatabase.app",
+  storageBucket: "basuhero-6687c.firebasestorage.app",
+  messagingSenderId: "381669972902",
+  appId: "1:381669972902:web:accd33feb498e59c040d67",
+  measurementId: "G-L5RJ0NBSBG"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+let analytics = null;
+try {
+  analytics = getAnalytics(app);
+} catch (e) {
+  console.debug('Analytics unavailable on this context', e);
+}
+const database = getDatabase(app);
 // Runtime alignment: align header to centered content only on wider screens.
 // On small viewports this is counter-productive (compresses text) so we no-op.
 (function () {
@@ -62,21 +88,6 @@ if (typeof window.showLoading !== 'function') {
       }
     } catch (e) {}
   };
-}
-
-function loadLocalReports() {
-  try {
-    const raw = localStorage.getItem(LOCAL_REPORTS_KEY);
-    const parsed = raw ? JSON.parse(raw) : [];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch (e) {
-    console.warn('Failed to read local reports', e);
-    return [];
-  }
-}
-
-function saveLocalReports(list) {
-  localStorage.setItem(LOCAL_REPORTS_KEY, JSON.stringify(list));
 }
 
 // Location is requested explicitly by user action to enable mobile permission prompts before form submit.
@@ -564,19 +575,80 @@ async function getNextReportId() {
 
   const now = new Date();
   const datePart = String(now.getMonth() + 1).padStart(2, '0') + String(now.getDate()).padStart(2, '0') + String(now.getFullYear());
-  let reportNumber = 1;
-  try {
-    reportNumber = Number(localStorage.getItem(LOCAL_REPORT_COUNTER_KEY) || '0') + 1;
-    localStorage.setItem(LOCAL_REPORT_COUNTER_KEY, String(reportNumber));
-  } catch (e) {
-    reportNumber = (Date.now() % 100000) || 1;
+  const ts = Date.now();
+  const randomPart = Math.floor(Math.random() * 100000).toString().padStart(5, '0');
+  return 'R-' + datePart + '-' + ts + '-' + randomPart;
+}
+
+async function persistReportToRTDB(reportData) {
+  if (!reportData || !reportData.id) {
+    throw new Error('Invalid report payload for RTDB');
   }
-  const numPart = String(reportNumber).padStart(5, '0');
-  return 'R-' + numPart + datePart;
+
+  // RTDB rejects undefined values anywhere in the payload.
+  const sanitizeForRTDB = (value) => {
+    if (value === undefined) return null;
+    if (value === null) return null;
+    if (Array.isArray(value)) return value.map(sanitizeForRTDB);
+    if (typeof value === 'object') {
+      const out = {};
+      Object.keys(value).forEach((k) => {
+        const v = sanitizeForRTDB(value[k]);
+        if (v !== undefined) out[k] = v;
+      });
+      return out;
+    }
+    return value;
+  };
+
+  const safeData = sanitizeForRTDB(reportData);
+  const reportId = String(reportData.id);
+
+  // REST write first using POST so each report gets a unique RTDB key (append-only).
+  const restUrl = `${firebaseConfig.databaseURL}/reports.json`;
+  try {
+    const response = await fetch(restUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(safeData)
+    });
+
+    if (!response.ok) {
+      let details = '';
+      try {
+        const payload = await response.json();
+        details = payload && payload.error ? String(payload.error) : '';
+      } catch (e) {}
+      throw new Error(`RTDB REST write failed (${response.status})${details ? ': ' + details : ''}`);
+    }
+
+    let restKey = null;
+    try {
+      const payload = await response.json();
+      restKey = payload?.name || null;
+    } catch (e) {}
+    console.log('Saved report to RTDB via REST', { reportId, key: restKey });
+    return;
+  } catch (restErr) {
+    console.warn('RTDB REST write failed, trying SDK fallback', restErr);
+  }
+
+  try {
+    const newReportRef = push(ref(database, 'reports'));
+    await set(newReportRef, safeData);
+    console.log('Saved report to RTDB via SDK', { reportId, key: newReportRef.key });
+    return;
+  } catch (sdkErr) {
+    throw new Error('RTDB write failed (REST and SDK): ' + (sdkErr?.message || sdkErr));
+  }
 }
 
 const form = document.getElementById('report-form');
-form.addEventListener('submit', async function (e) {
+if (!form) {
+  console.error('Report form not found: #report-form');
+}
+
+if (form) form.addEventListener('submit', async function (e) {
   e.preventDefault();
   showLoading('Submitting report');
   const type = document.getElementById('waste-type').value;
@@ -654,8 +726,8 @@ form.addEventListener('submit', async function (e) {
     throw (lastError || new Error('Unable to save report to server')); 
   }
 
-  // attempt geolocation and save document with logging
-  async function saveReportLocally(coords) {
+  // build the report payload for RTDB/API persistence
+  function buildReportData(coords) {
     try {
       const reportData = {
         id,
@@ -675,13 +747,9 @@ form.addEventListener('submit', async function (e) {
         lat: coords?.lat,
         lng: coords?.lng
       };
-      const list = loadLocalReports();
-      list.push(reportData);
-      saveLocalReports(list);
-      console.log('Saved report locally', { reportId: id });
       return reportData;
     } catch (err) {
-      console.error('Failed to save report locally', err);
+      console.error('Failed to build report payload', err);
       throw err;
     }
   }
@@ -703,8 +771,13 @@ form.addEventListener('submit', async function (e) {
         alert('Reports are limited to Baguio City. Your current location appears to be outside Baguio. Please move to a location inside Baguio City or enable a device location within Baguio and try again.');
         return;
       }
-      const savedReport = await saveReportLocally(cachedLoc);
-      await persistReportToServer(savedReport);
+      const savedReport = buildReportData(cachedLoc);
+      await persistReportToRTDB(savedReport);
+      try {
+        await persistReportToServer(savedReport);
+      } catch (serverErr) {
+        console.warn('Saved to RTDB but failed to save to server API', serverErr);
+      }
     } catch (e) {
       console.error(e);
       hideLoading();
@@ -738,8 +811,13 @@ form.addEventListener('submit', async function (e) {
           alert('Reports are limited to Baguio City. Your detected location is outside Baguio. Report submission has been blocked.');
           return;
         }
-        const savedReport = await saveReportLocally(loc);
-        await persistReportToServer(savedReport);
+        const savedReport = buildReportData(loc);
+        await persistReportToRTDB(savedReport);
+        try {
+          await persistReportToServer(savedReport);
+        } catch (serverErr) {
+          console.warn('Saved to RTDB but failed to save to server API', serverErr);
+        }
       } catch (e) {
         console.error(e);
         hideLoading();
