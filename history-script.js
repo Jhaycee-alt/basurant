@@ -3,6 +3,12 @@
 
   const LOCAL_REPORTS_KEY = 'basurant_reports';
   const LOCAL_REPORT_COUNTER_KEY = 'basurant_report_counter';
+  const LOCAL_MIGRATION_FLAG = 'basurant_reports_migrated_to_json';
+  const REPORTS_API_ENDPOINTS = [
+    '/api/reports',
+    'http://localhost:3000/api/reports',
+    'http://localhost:3001/api/reports'
+  ];
 
   // Run main when DOM is ready so elements like #history-map exist
   function main() {
@@ -135,6 +141,63 @@
       } catch (e) {
         console.warn('Failed to seed sample reports', e);
       }
+    }
+
+    async function migrateLocalReportsToJson() {
+      try {
+        const alreadyMigrated = localStorage.getItem(LOCAL_MIGRATION_FLAG) === '1';
+        if (alreadyMigrated) return;
+
+        const raw = localStorage.getItem(LOCAL_REPORTS_KEY);
+        const reports = raw ? JSON.parse(raw) : [];
+        if (!Array.isArray(reports) || reports.length === 0) return;
+
+        const endpoints = [
+          '/api/reports/bulk',
+          'http://localhost:3000/api/reports/bulk',
+          'http://localhost:3001/api/reports/bulk'
+        ];
+
+        let migrated = false;
+        for (const endpoint of endpoints) {
+          try {
+            const response = await fetch(endpoint, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ reports })
+            });
+            if (response.ok) {
+              migrated = true;
+              break;
+            }
+            console.warn('Local-to-JSON migration failed with status', response.status, 'at', endpoint);
+          } catch (e) {
+            console.warn('Local-to-JSON migration request failed at', endpoint, e);
+          }
+        }
+
+        if (!migrated) return;
+
+        localStorage.setItem(LOCAL_MIGRATION_FLAG, '1');
+        console.log('Local reports migrated to reports.json');
+      } catch (e) {
+        console.warn('Local-to-JSON migration failed', e);
+      }
+    }
+
+    async function fetchReportsFromJsonApi() {
+      for (const endpoint of REPORTS_API_ENDPOINTS) {
+        try {
+          const response = await fetch(endpoint, { method: 'GET' });
+          if (!response.ok) continue;
+          const payload = await response.json();
+          const reports = Array.isArray(payload?.reports) ? payload.reports : [];
+          return reports;
+        } catch (e) {
+          console.debug('fetchReportsFromJsonApi failed at', endpoint, e);
+        }
+      }
+      return [];
     }
 
     let map;
@@ -306,25 +369,24 @@
             try { if (!report && window.__reportMarkers && window.__reportMarkers[id]) report = window.__reportMarkers[id].report || null; } catch(e){}
             // try local cache
             try {
-              const local = localStorage.getItem('basurant_reports_v1');
+              const local = localStorage.getItem(LOCAL_REPORTS_KEY);
               if (!report && local) {
                 const arr = JSON.parse(local || '[]');
                 if (Array.isArray(arr)) report = arr.find(r=>String(r.id||r.reportId||r._id)===id) || null;
               }
             } catch(e){}
+
+            // finally try reports.json API
+            if (!report) {
+              try {
+                const apiReports = await fetchReportsFromJsonApi();
+                report = apiReports.find(r => String(r?.id || r?.reportId || r?._id) === id) || null;
+              } catch(e) { console.debug('showReportDetails API lookup failed', e); }
+            }
           }
 
           if (!report) {
-            console.debug && console.debug('showReportDetails: report not found locally', reportOrId);
-            // best-effort remote fetch via RTDB REST if configured
-            try {
-              const base = window.RTDB_URL || (typeof RTDB_URL !== 'undefined' && RTDB_URL) || null;
-              if (base && (typeof reportOrId === 'string' || typeof reportOrId === 'number')) {
-                const u = String(base).replace(/\/+$/,'') + '/reports/' + encodeURIComponent(String(reportOrId)) + '.json';
-                const rresp = await fetch(u);
-                if (rresp && rresp.ok) report = await rresp.json();
-              }
-            } catch(e) { console.debug('showReportDetails remote fetch failed', e); }
+            console.debug && console.debug('showReportDetails: report not found', reportOrId);
           }
 
           if (!report) return;
@@ -404,33 +466,39 @@
       if (!Array.isArray(list) || list.length === 0) return;
       list.forEach(r => {
         if (!r) return;
-        if (!isFinite(r.lat) || !isFinite(r.lng)) return;
+        const lat = (typeof r.lat === 'string') ? parseFloat(r.lat) : r.lat;
+        const lng = (typeof r.lng === 'string') ? parseFloat(r.lng) : r.lng;
+        if (!isFinite(lat) || !isFinite(lng)) return;
         const size = r.size || 'small';
         const statusKey = getCanonicalStatus(r && r.status);
         const color = STATUS_COLORS[statusKey] || '#9E9E9E';
         const baseRadius = size === 'small' ? 6 : size === 'medium' ? 9 : 12;
         const icon = createDivIconFor(baseRadius, color);
-        const marker = L.marker([r.lat, r.lng], { icon: icon });
+        const marker = L.marker([lat, lng], { icon: icon });
         try { marker.report = r; } catch (e) {}
         try { marker.__basurant_base = baseRadius; marker.__basurant_color = color; updateMarkerIcon(marker); } catch (e) {}
         try { if (reportsLayer && typeof reportsLayer.addLayer === 'function') reportsLayer.addLayer(marker); else marker.addTo(map); } catch (e) {}
       });
     }
 
-    (function loadAndRenderReports(){
-      try { console.debug('loadAndRenderReports local-only'); } catch (e) {}
+    (async function loadAndRenderReports(){
+      try { console.debug('loadAndRenderReports reports.json API'); } catch (e) {}
       seedSampleReportsIfEmpty();
-      const localReports = (function(){
+      await migrateLocalReportsToJson();
+
+      let reports = await fetchReportsFromJsonApi();
+
+      if (!Array.isArray(reports) || reports.length === 0) {
         try {
           const raw = localStorage.getItem(LOCAL_REPORTS_KEY);
           const parsed = raw ? JSON.parse(raw) : [];
-          return Array.isArray(parsed) ? parsed : [];
+          reports = Array.isArray(parsed) ? parsed : [];
         } catch (e) {
-          console.warn('Failed to read local reports', e);
-          return [];
+          reports = [];
         }
-      })();
-      renderLocalReportsOnMap(localReports);
+      }
+
+      renderLocalReportsOnMap(reports);
     })();
 
     // If the page was opened with ?plot=id&lat=...&lng=..., add a temporary marker and center map
