@@ -127,8 +127,20 @@
           </select>
         </div>
 
+      <div class="form-group mt-4">
+        <label class="block text-sm font-medium text-gray-700">Location Access <span class="text-red-500">*</span></label>
+        <div class="mt-2 flex flex-wrap items-center gap-3">
+          <button id="request-location-btn" type="button" class="btn-green">Request Location Access</button>
+          <div id="location-status" class="text-xs text-gray-600"></div>
+        </div>
+        <div class="text-xs text-gray-500 mt-1">Tap the button to allow location before submitting your report.</div>
+      </div>
+
       <div class="form-group">
         <label for="photo">Photo <span class="text-red-500">*</span></label>
+        <div class="mt-2 flex flex-wrap gap-2">
+          <button id="open-camera-btn" type="button" class="btn-green">Take Photo</button>
+        </div>
         <input id="photo" type="file" accept="image/*" capture="environment" required>
         <canvas id="camera-canvas"></canvas>
         <video id="camera-video" autoplay playsinline></video>
@@ -142,7 +154,7 @@
 
       <div class="form-group">
         <label for="video">Video (optional)</label>
-        <input id="video" type="file" accept="video/*" capture="environment">
+        <input id="video" type="file" accept="video/*">
       </div>
 
       <div class="mt-4 flex justify-center">
