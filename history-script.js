@@ -1,14 +1,36 @@
+// Import the functions you need from the SDKs you need
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
+import { getAnalytics } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-analytics.js";
+import { getDatabase, ref, get } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-database.js";
+// TODO: Add SDKs for Firebase products that you want to use
+// https://firebase.google.com/docs/web/setup#available-libraries
+
+// Your web app's Firebase configuration
+// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+const firebaseConfig = {
+  apiKey: "AIzaSyCSEqyxRcUDCN0JhUaoHj6wgvu2qjg1gBk",
+  authDomain: "basuhero-6687c.firebaseapp.com",
+  projectId: "basuhero-6687c",
+  databaseURL: "https://basuhero-6687c-default-rtdb.asia-southeast1.firebasedatabase.app",
+  storageBucket: "basuhero-6687c.firebasestorage.app",
+  messagingSenderId: "381669972902",
+  appId: "1:381669972902:web:accd33feb498e59c040d67",
+  measurementId: "G-L5RJ0NBSBG"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app);
+const database = getDatabase(app);
 (function(){
   console.debug('history-script loaded');
 
-  const LOCAL_REPORTS_KEY = 'basurant_reports';
-  const LOCAL_REPORT_COUNTER_KEY = 'basurant_report_counter';
-  const LOCAL_MIGRATION_FLAG = 'basurant_reports_migrated_to_json';
   const REPORTS_API_ENDPOINTS = [
     '/api/reports',
     'http://localhost:3000/api/reports',
     'http://localhost:3001/api/reports'
   ];
+  
 
   // Run main when DOM is ready so elements like #history-map exist
   function main() {
@@ -60,131 +82,6 @@
       return 'pending';
     }
 
-    function formatDatePart(dt) {
-      const mm = String(dt.getMonth() + 1).padStart(2, '0');
-      const dd = String(dt.getDate()).padStart(2, '0');
-      const yyyy = String(dt.getFullYear());
-      return mm + dd + yyyy;
-    }
-
-    function seedSampleReportsIfEmpty() {
-      try {
-        const raw = localStorage.getItem(LOCAL_REPORTS_KEY);
-        const parsed = raw ? JSON.parse(raw) : [];
-        if (Array.isArray(parsed) && parsed.length > 0) return;
-      } catch (e) {
-        console.warn('Failed reading local reports for seeding', e);
-      }
-
-      const today = new Date();
-      const datePart = formatDatePart(today);
-      const sampleReports = [
-        {
-          id: `R-00001${datePart}`,
-          type: 'Household Waste',
-          size: 'small',
-          materialDesc: 'bags of household trash',
-          spotDesc: 'On the alleyway',
-          landType: 'Public',
-          landmark: 'Near market',
-          description: 'Materials: bags of household trash | Specific Spot: On the alleyway | Land: Public | Landmark: Near market',
-          barangay: 'Market Subdivision, Upper',
-          photoDataUrl: null,
-          additionalImageDataUrl: null,
-          videoMeta: null,
-          status: 'pending',
-          createdAt: Date.now() - 1000 * 60 * 60 * 24,
-          lat: 16.4102,
-          lng: 120.5972
-        },
-        {
-          id: `R-00002${datePart}`,
-          type: 'Construction Debris',
-          size: 'large',
-          materialDesc: 'Construction debris',
-          spotDesc: 'Roadside shoulder',
-          landType: 'Public',
-          landmark: 'Near intersection',
-          description: 'Materials: Construction debris | Specific Spot: Roadside shoulder | Land: Public | Landmark: Near intersection',
-          barangay: 'Aurora Hill Proper (Malvar-Sgt. Floresca)',
-          photoDataUrl: null,
-          additionalImageDataUrl: null,
-          videoMeta: null,
-          status: 'ongoing',
-          createdAt: Date.now() - 1000 * 60 * 60 * 6,
-          lat: 16.4154,
-          lng: 120.6078
-        },
-        {
-          id: `R-00003${datePart}`,
-          type: 'Electronics (e-waste)',
-          size: 'medium',
-          materialDesc: 'Electronics (e-waste)',
-          spotDesc: 'Beside wall/fence',
-          landType: 'Private',
-          landmark: 'Near school',
-          description: 'Materials: Electronics (e-waste) | Specific Spot: Beside wall/fence | Land: Private | Landmark: Near school',
-          barangay: 'Guisad Central',
-          photoDataUrl: null,
-          additionalImageDataUrl: null,
-          videoMeta: null,
-          status: 'pending',
-          createdAt: Date.now() - 1000 * 60 * 20,
-          lat: 16.4031,
-          lng: 120.5889
-        }
-      ];
-
-      try {
-        localStorage.setItem(LOCAL_REPORTS_KEY, JSON.stringify(sampleReports));
-        localStorage.setItem(LOCAL_REPORT_COUNTER_KEY, '3');
-      } catch (e) {
-        console.warn('Failed to seed sample reports', e);
-      }
-    }
-
-    async function migrateLocalReportsToJson() {
-      try {
-        const alreadyMigrated = localStorage.getItem(LOCAL_MIGRATION_FLAG) === '1';
-        if (alreadyMigrated) return;
-
-        const raw = localStorage.getItem(LOCAL_REPORTS_KEY);
-        const reports = raw ? JSON.parse(raw) : [];
-        if (!Array.isArray(reports) || reports.length === 0) return;
-
-        const endpoints = [
-          '/api/reports/bulk',
-          'http://localhost:3000/api/reports/bulk',
-          'http://localhost:3001/api/reports/bulk'
-        ];
-
-        let migrated = false;
-        for (const endpoint of endpoints) {
-          try {
-            const response = await fetch(endpoint, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ reports })
-            });
-            if (response.ok) {
-              migrated = true;
-              break;
-            }
-            console.warn('Local-to-JSON migration failed with status', response.status, 'at', endpoint);
-          } catch (e) {
-            console.warn('Local-to-JSON migration request failed at', endpoint, e);
-          }
-        }
-
-        if (!migrated) return;
-
-        localStorage.setItem(LOCAL_MIGRATION_FLAG, '1');
-        console.log('Local reports migrated to reports.json');
-      } catch (e) {
-        console.warn('Local-to-JSON migration failed', e);
-      }
-    }
-
     async function fetchReportsFromJsonApi() {
       for (const endpoint of REPORTS_API_ENDPOINTS) {
         try {
@@ -198,6 +95,19 @@
         }
       }
       return [];
+    }
+
+    async function fetchReportsFromRTDB() {
+      try {
+        const snapshot = await get(ref(database, 'reports'));
+        if (!snapshot.exists()) return [];
+        const value = snapshot.val();
+        if (!value || typeof value !== 'object') return [];
+        return Object.values(value).filter(Boolean);
+      } catch (e) {
+        console.debug('fetchReportsFromRTDB failed', e);
+        return [];
+      }
     }
 
     let map;
@@ -367,16 +277,14 @@
             // try stored in-memory lists or marker map
             try { if (window.__admin_reports && Array.isArray(window.__admin_reports)) report = window.__admin_reports.find(r=>String(r.id||r.reportId||r._id)===id) || null; } catch(e){}
             try { if (!report && window.__reportMarkers && window.__reportMarkers[id]) report = window.__reportMarkers[id].report || null; } catch(e){}
-            // try local cache
-            try {
-              const local = localStorage.getItem(LOCAL_REPORTS_KEY);
-              if (!report && local) {
-                const arr = JSON.parse(local || '[]');
-                if (Array.isArray(arr)) report = arr.find(r=>String(r.id||r.reportId||r._id)===id) || null;
-              }
-            } catch(e){}
+            // finally try RTDB then reports.json API
+            if (!report) {
+              try {
+                const rtdbReports = await fetchReportsFromRTDB();
+                report = rtdbReports.find(r => String(r?.id || r?.reportId || r?._id) === id) || null;
+              } catch(e) { console.debug('showReportDetails RTDB lookup failed', e); }
+            }
 
-            // finally try reports.json API
             if (!report) {
               try {
                 const apiReports = await fetchReportsFromJsonApi();
@@ -483,19 +391,11 @@
 
     (async function loadAndRenderReports(){
       try { console.debug('loadAndRenderReports reports.json API'); } catch (e) {}
-      seedSampleReportsIfEmpty();
-      await migrateLocalReportsToJson();
 
-      let reports = await fetchReportsFromJsonApi();
+      let reports = await fetchReportsFromRTDB();
 
       if (!Array.isArray(reports) || reports.length === 0) {
-        try {
-          const raw = localStorage.getItem(LOCAL_REPORTS_KEY);
-          const parsed = raw ? JSON.parse(raw) : [];
-          reports = Array.isArray(parsed) ? parsed : [];
-        } catch (e) {
-          reports = [];
-        }
+        reports = await fetchReportsFromJsonApi();
       }
 
       renderLocalReportsOnMap(reports);
